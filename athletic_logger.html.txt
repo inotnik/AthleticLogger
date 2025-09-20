@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Athletic Logger</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+<style>
+:root{
+  --bg:#0f1724;--card:#0b1220;--muted:#98a0b3;
+  --accent:#5EEAD4;--accent2:#60A5FA;--glass: rgba(255,255,255,0.03);
+}
+body{
+  margin:0;
+  font-family:Inter,system-ui,sans-serif;
+  background:var(--bg);
+  color:#e6eef8;
+  padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;transition:all 0.3s;}
+h1{margin:0;font-size:22px;}
+.tabs{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;}
+.tab{padding:8px 14px;border-radius:8px;cursor:pointer;background:var(--card);transition:all 0.3s;white-space:nowrap;}
+.tab.active{background:var(--accent2);color:#022;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.6);}
+#routineContainer{display:flex;flex-direction:column;gap:10px;}
+.card{background:var(--card);border-radius:12px;padding:12px;position:relative;box-shadow:0 4px 14px rgba(0,0,0,0.6);display:flex;align-items:center;gap:10px;transition:all 0.3s;}
+.card.completed{animation:completeAnim 0.5s forwards;}
+@keyframes completeAnim {0%{transform:scale(1)}50%{transform:scale(1.05)}100%{transform:scale(1)}}
+.exercise-media{width:50px;height:50px;border-radius:6px;object-fit:cover;background:#222;}
+.title{flex:1;font-weight:500;}
+.controls{display:flex;gap:6px;align-items:center;}
+.btn{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px 8px;border-radius:8px;color:var(--accent);cursor:pointer;transition:all 0.3s;}
+.btn.alt{border-color: rgba(255,255,255,0.03);color: var(--accent2);}
+input[type="text"],input[type="number"]{background:transparent;border:1px solid rgba(255,255,255,0.04);color:inherit;padding:6px;border-radius:6px;width:50px;}
+.menu{position:absolute;top:10px;right:10px;cursor:pointer;font-weight:bold;color:var(--accent);}
+.dropdown{position:absolute;top:30px;right:10px;background:var(--card);border-radius:8px;padding:6px;display:none;flex-direction:column;z-index:10;}
+.dropdown button{margin:2px 0;}
+.checkmark{position:absolute;top:10px;left:10px;color:var(--accent);font-size:18px;opacity:0;transition:opacity 0.3s;}
+#calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:6px;}
+.day{height:36px;border-radius:6px;background:rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);}
+.day.active{background:linear-gradient(180deg,var(--accent) 0%, rgba(96,165,250,0.2) 100%);color:#022;font-weight:700;}
+.chart-container{margin-top:12px;}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Athletic Logger</h1>
+<div class="tabs">
+  <div class="tab active" data-tab="stretching">Stretching</div>
+  <div class="tab" data-tab="athleticism">Athleticism</div>
+  <div class="tab" data-tab="injury">Injury Prevention</div>
+  <div class="tab" data-tab="progress">Progress</div>
+</div>
+</header>
+
+<div id="routineContainer"></div>
+
+<div class="card" id="customExerciseCard">
+<h2>Add Exercise</h2>
+<input id="customName" placeholder="Exercise name">
+<input id="customSets" type="text" placeholder="Sets">
+<input id="customReps" type="text" placeholder="Reps/Hold(s)">
+<input id="customMedia" type="file" accept="image/*,video/*">
+<button id="addCustomBtn" class="btn alt">Add</button>
+</div>
+
+<div id="progressCard" class="card" style="display:none;">
+<h2>Progress</h2>
+<div>Bodyweight: <input id="bwInput" type="number" placeholder="Bodyweight"> <button id="saveBW" class="btn">Save</button></div>
+<div class="chart-container"><canvas id="bwChart"></canvas></div>
+<div class="chart-container"><canvas id="streakChart"></canvas></div>
+<div id="calendar"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/idb@7/build/iife/index-min.js"></script>
+<script>
+// Sound effect using Howler.js
+const popSound=new Howl({src:['https://freesound.org/data/previews/256/256113_3263906-lq.mp3']});
+
+// Preloaded routines
+let routinesData = {
+stretching:[
+{ name:"Seated Hamstring Stretch", sets:"2 min", reps:"-", media:null },
+{ name:"Figure 4 Stretch", sets:"2 min", reps:"-", media:null },
+{ name:"Pigeon Pose", sets:"2 min", reps:"ES", media:null },
+{ name:"Couch Stretch", sets:"2 min", reps:"ES", media:null },
+{ name:"Deep Lunge", sets:"30 sec", reps:"ES", media:null },
+{ name:"Frog Stretch", sets:"1 min", reps:"-", media:null },
+{ name:"Butterfly Stretch", sets:"2 min", reps:"-", media:null },
+{ name:"Side Lunge", sets:"1 min", reps:"ES", media:null },
+{ name:"Wall Calf Stretch", sets:"1 min", reps:"ES", media:null },
+{ name:"Toe Squat", sets:"1 min", reps:"-", media:null },
+{ name:"Ankle Circles", sets:"30 sec", reps:"-", media:null },
+{ name:"90/90 Hip Rotations", sets:"1 min", reps:"ES", media:null },
+{ name:"Jefferson Curl", sets:"1 min", reps:"-", media:null },
+{ name:"Deep Squat Hold", sets:"1 min", reps:"-", media:null },
+{ name:"Side splits", sets:"1 min", reps:"-", media:null },
+{ name:"Seated Spinal Twist", sets:"1 min", reps:"-", media:null },
+{ name:"Thread the Needle", sets:"30 sec", reps:"ES", media:null }
+],
+athleticism:[
+{ name:"Trap bar heavy deadlifts", sets:"3x8", reps:"-", media:null },
+{ name:"Box squats heavy explode up", sets:"3x8", reps:"-", media:null },
+{ name:"Weighted side lunges", sets:"2x10 ES", reps:"-", media:null }
+],
+injury:[
+{ name:"Glute Bridges", sets:"2x10", reps:"2-sec hold", media:null },
+{ name:"Side-Lying Clamshells", sets:"2x8 ES", reps:"ES", media:null }
+};
+
+let currentTab="stretching";
+const routineContainer=document.getElementById("routineContainer");
+const progressCard=document.getElementById("progressCard");
+
+function renderRoutine(){
+  if(currentTab==="progress"){
+    routineContainer.innerHTML="";
+    progressCard.style.display="block";
+    renderProgress();
+    return;
+  } else {progressCard.style.display="none";}
+
+  routineContainer.innerHTML="";
+  routinesData[currentTab].forEach((ex,i)=>{
+    const div=document.createElement("div");
+    div.className="card exercise";
+    let mediaHTML=`<img src="https://via.placeholder.com/50" class="exercise-media">`;
+    div.innerHTML=`
+    <div class="checkmark">✔</div>
+    ${mediaHTML}
+    <div class="title">${ex.name}</div>
+    <input type="text" value="${ex.sets}" onchange="updateSets(${i},this.value)">
+    <input type="text" value="${ex.reps}" onchange="updateReps(${i},this.value)">
+    <div class="menu">⋮
+      <div class="dropdown">
+        <button onclick="editExercise(${i})">Edit</button>
+        <button onclick="deleteExercise(${i})">Delete</button>
+        <button onclick="uploadMedia(${i})">Upload Media</button>
+      </div>
+    </div>`;
+    routineContainer.appendChild(div);
+
+    // Dropdown toggle
+    const menu=div.querySelector(".menu");
+    const dropdown=div.querySelector(".dropdown");
+    menu.addEventListener("click",()=>{dropdown.style.display=dropdown.style.display==="flex"?"none":"flex";dropdown
